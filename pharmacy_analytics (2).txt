@@ -1,0 +1,71 @@
+-- 1. Total Nilai Persediaan per Obat
+SELECT 
+  Kode_Obat,
+  Nama_Obat,
+  SUM(Stok_Akhir) AS Total_Stok_Akhir,
+  SUM(Stok_Akhir * Harga_Pokok_Per_Unit) AS Total_Nilai_Persediaan
+FROM `pharmacy_dataset.pharmacy_inventory`
+GROUP BY Kode_Obat, Nama_Obat
+ORDER BY Total_Nilai_Persediaan DESC;
+
+-- 2. Pemakaian Obat Rawat Inap per Bulan
+SELECT 
+  EXTRACT(YEAR FROM Tanggal_Pemakaian) AS Tahun,
+  EXTRACT(MONTH FROM Tanggal_Pemakaian) AS Bulan,
+  Kode_Obat,
+  SUM(Jumlah_Unit) AS Total_Unit_Digunakan,
+  SUM(Total_Harga_Pokok) AS Total_Nilai_Pemakaian
+FROM `pharmacy_dataset.inpatient_usage`
+GROUP BY Tahun, Bulan, Kode_Obat
+ORDER BY Tahun, Bulan, Total_Nilai_Pemakaian DESC;
+
+-- 3. Penjualan dan Margin Keuntungan Rawat Jalan per Obat
+SELECT 
+  Kode_Obat,
+  SUM(Jumlah_Unit) AS Total_Unit_Terjual,
+  SUM(Total_Harga_Jual) AS Total_Pendapatan,
+  SUM(Total_Harga_Pokok) AS Total_Harga_Pokok,
+  SUM(Total_Harga_Jual - Total_Harga_Pokok) AS Total_Margin_Keuntungan,
+  ROUND((SUM(Total_Harga_Jual - Total_Harga_Pokok) / SUM(Total_Harga_Jual)) * 100, 2) AS Persentase_Margin
+FROM `pharmacy_dataset.outpatient_sales`
+GROUP BY Kode_Obat
+ORDER BY Total_Pendapatan DESC;
+
+-- 4. Pergerakan Stok (Pembelian vs Pemakaian vs Penjualan)
+WITH StokMasuk AS (
+  SELECT 
+    Kode_Obat,
+    SUM(Jumlah_Unit) AS Total_Pembelian,
+    SUM(Total_Harga_Pokok) AS Total_Nilai_Pembelian
+  FROM `pharmacy_dataset.pharmacy_inventory`
+  GROUP BY Kode_Obat
+),
+StokKeluarPemakaian AS (
+  SELECT 
+    Kode_Obat,
+    SUM(Jumlah_Unit) AS Total_Pemakaian,
+    SUM(Total_Harga_Pokok) AS Total_Nilai_Pemakaian
+  FROM `pharmacy_dataset.inpatient_usage`
+  GROUP BY Kode_Obat
+),
+StokKeluarPenjualan AS (
+  SELECT 
+    Kode_Obat,
+    SUM(Jumlah_Unit) AS Total_Penjualan,
+    SUM(Total_Harga_Pokok) AS Total_Nilai_Penjualan
+  FROM `pharmacy_dataset.outpatient_sales`
+  GROUP BY Kode_Obat
+)
+SELECT 
+  sm.Kode_Obat,
+  sm.Total_Pembelian,
+  sm.Total_Nilai_Pembelian,
+  COALESCE(sp.Total_Pemakaian, 0) AS Total_Pemakaian,
+  COALESCE(sp.Total_Nilai_Pemakaian, 0) AS Total_Nilai_Pemakaian,
+  COALESCE(sj.Total_Penjualan, 0) AS Total_Penjualan,
+  COALESCE(sj.Total_Nilai_Penjualan, 0) AS Total_Nilai_Penjualan,
+  (sm.Total_Pembelian - COALESCE(sp.Total_Pemakaian, 0) - COALESCE(sj.Total_Penjualan, 0)) AS Stok_Tersisa
+FROM StokMasuk sm
+LEFT JOIN StokKeluarPemakaian sp ON sm.Kode_Obat = sp.Kode_Obat
+LEFT JOIN StokKeluarPenjualan sj ON sm.Kode_Obat = sj.Kode_Obat
+ORDER BY sm.Kode_Obat;
